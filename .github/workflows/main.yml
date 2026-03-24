@@ -1,10 +1,11 @@
-name: Build HitVaultV2
+name: Build HitVaultV2 (Latest)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   android:
@@ -23,7 +24,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20'
         cache: 'npm'
         
     - name: Install dependencies
@@ -32,59 +33,104 @@ jobs:
     - name: Build Android APK
       run: |
         cd android
+        chmod +x gradlew
         ./gradlew assembleRelease
         
     - name: Upload Android APK
       uses: actions/upload-artifact@v4
       with:
-        name: android-apk
+        name: hitvault-android-apk
         path: android/app/build/outputs/apk/release/app-release.apk
-        retention-days: 30
+        retention-days: 7
 
   ios:
-    runs-on: macos-latest
+    runs-on: macos-15 
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Setup Xcode 16.2
+      run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
       
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20'
         cache: 'npm'
         
     - name: Install dependencies
       run: npm install
       
+    - name: Patch Podfile for Unsigned Build
+      run: |
+        cd ios
+        node -e "
+          const fs = require('fs');
+          if (fs.existsSync('Podfile')) {
+            let podfile = fs.readFileSync('Podfile', 'utf8');
+            const injectCode = \`
+              installer.pods_project.targets.each do |target|
+                target.build_configurations.each do |config|
+                  # Apple Accounts ignorieren
+                  config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+                  config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+                  config.build_settings['CODE_SIGN_IDENTITY'] = ''
+                  config.build_settings['EXPANDED_CODE_SIGN_IDENTITY'] = ''
+                  # Fehler bei Header-Dateien ignorieren
+                  config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+                end
+              end
+            \`;
+            if (podfile.includes('post_install do |installer|')) {
+              podfile = podfile.replace('post_install do |installer|', 'post_install do |installer|\\n' + injectCode);
+              fs.writeFileSync('Podfile', podfile);
+              console.log('✅ Podfile gepatched für Xcode 16!');
+            }
+          }
+        "
+      
     - name: Install CocoaPods
       run: |
         cd ios
-        pod install
+        pod install --repo-update
         
     - name: Build iOS App
       run: |
         cd ios
-        xcodebuild -workspace HitVaultV2.xcworkspace \
-                   -scheme HitVaultV2 \
+        WORKSPACE=$(ls | grep .xcworkspace | head -1)
+        SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+        
+        xcodebuild clean build \
+                   -workspace "$WORKSPACE" \
+                   -scheme "$SCHEME" \
                    -configuration Release \
                    -sdk iphoneos \
                    -derivedDataPath ./build \
                    CODE_SIGNING_REQUIRED=NO \
                    CODE_SIGNING_ALLOWED=NO \
                    ENABLE_BITCODE=NO \
-                   ONLY_ACTIVE_ARCH=NO
+                   ONLY_ACTIVE_ARCH=NO \
+                   COMPILER_INDEX_STORE_ENABLE=NO
                    
     - name: Create IPA
       run: |
         cd ios
-        mkdir Payload
-        cp -r ./build/Build/Products/Release-iphoneos/HitVaultV2.app Payload/
+        mkdir -p Payload
+        
+        APP_PATH=$(find ./build -name "*.app" -type d | head -n 1)
+        
+        if [ -z "$APP_PATH" ]; then
+          echo "❌ FEHLER: Keine .app Datei gefunden!"
+          exit 1
+        fi
+        
+        cp -r "$APP_PATH" Payload/
         zip -r HitVaultV2.ipa Payload/
         
     - name: Upload iOS IPA
       uses: actions/upload-artifact@v4
       with:
-        name: ios-ipa
+        name: hitvault-ios-ipa
         path: ios/HitVaultV2.ipa
-        retention-days: 30
+        retention-days: 7
