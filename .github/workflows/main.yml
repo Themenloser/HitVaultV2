@@ -28,10 +28,40 @@ jobs:
     - name: Disable Asset Symbols (Hard Fix via sed)
       run: |
         cd ios
-        # Zwingt das Hauptprojekt, die fehlerhaften Asset-Symbole nicht zu generieren
         find . -name "*.pbxproj" -exec sed -i '' 's/ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;/ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;/g' {} +
         find . -name "*.pbxproj" -exec sed -i '' 's/ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = YES;/ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;/g' {} +
       
+    - name: Hard-Reset LaunchScreen.storyboard
+      run: |
+        # Schreibt ein nacktes, 100% fehlerfreies Storyboard ohne 18.2-Abhängigkeit
+        cat << 'EOF' > ios/HitVaultV2/LaunchScreen.storyboard
+        <?xml version="1.0" encoding="UTF-8"?>
+        <document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="21507" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
+            <device id="retina4_7" orientation="portrait" appearance="light"/>
+            <dependencies>
+                <deployment identifier="iOS"/>
+                <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="21505"/>
+                <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+                <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+            </dependencies>
+            <scenes>
+                <scene sceneID="EHf-IW-A2E">
+                    <objects>
+                        <viewController id="01J-lp-oVM" sceneMemberID="viewController">
+                            <view key="view" contentMode="scaleToFill" id="Ze5-6b-2t3">
+                                <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
+                                <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                                <viewLayoutGuide key="safeArea" id="Bcu-3y-fUS"/>
+                                <color key="backgroundColor" red="1" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                            </view>
+                        </viewController>
+                        <placeholder placeholderIdentifier="IBFirstResponder" id="iYj-Kq-Ea1" userLabel="First Responder" sceneMemberID="firstResponder"/>
+                    </objects>
+                </scene>
+            </scenes>
+        </document>
+        EOF
+
     - name: Install CocoaPods
       run: |
         cd ios
@@ -43,7 +73,6 @@ jobs:
     - name: Build iOS App with Fastlane (Failsafe)
       run: |
         cd ios
-        # Fastlane Gym baut die App wesentlich fehlertoleranter als raw xcodebuild
         fastlane gym \
           --workspace HitVaultV2.xcworkspace \
           --scheme HitVaultV2 \
@@ -56,7 +85,7 @@ jobs:
           
     - name: Create IPA (Manual Packaging)
       run: |
-        # Fastlane erstellt die .app Datei, wir packen sie manuell in eine .ipa
+        cd ios
         mkdir -p Payload
         APP_PATH=$(find . -name "HitVaultV2.app" -type d | head -n 1)
         
@@ -72,5 +101,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: hitvault-ios-ipa
-        path: HitVaultV2.ipa
+        path: ios/HitVaultV2.ipa
         retention-days: 7
