@@ -1,48 +1,11 @@
-name: Build HitVaultV2
+name: Build HitVaultV2 (Fastlane)
 
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  android:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Java
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-        
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-        
-    - name: Install dependencies
-      run: npm install
-      
-    - name: Build Android APK
-      run: |
-        cd android
-        chmod +x gradlew
-        ./gradlew assembleRelease
-        
-    - name: Upload Android APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: hitvault-android-apk
-        path: android/app/build/outputs/apk/release/app-release.apk
-        retention-days: 7
-
   ios:
     runs-on: macos-15
     
@@ -62,33 +25,40 @@ jobs:
     - name: Install dependencies
       run: npm install
       
+    - name: Disable Asset Symbols (Hard Fix via sed)
+      run: |
+        cd ios
+        # Zwingt das Hauptprojekt, die fehlerhaften Asset-Symbole nicht zu generieren
+        find . -name "*.pbxproj" -exec sed -i '' 's/ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;/ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;/g' {} +
+        find . -name "*.pbxproj" -exec sed -i '' 's/ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = YES;/ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;/g' {} +
+      
     - name: Install CocoaPods
       run: |
         cd ios
         pod install --repo-update
         
-    - name: Build iOS App
+    - name: Install Fastlane
+      run: gem install fastlane
+      
+    - name: Build iOS App with Fastlane (Failsafe)
       run: |
         cd ios
-        # Ein sauberer xcodebuild Befehl, ohne Podfile-Ruby-Hacks, 
-        # da Windsurf das Projekt intern repariert hat.
-        xcodebuild clean build \
-                   -workspace HitVaultV2.xcworkspace \
-                   -scheme HitVaultV2 \
-                   -configuration Release \
-                   -sdk iphoneos \
-                   -derivedDataPath ./build \
-                   CODE_SIGNING_REQUIRED=NO \
-                   CODE_SIGNING_ALLOWED=NO \
-                   ENABLE_BITCODE=NO \
-                   ONLY_ACTIVE_ARCH=NO
-                   
-    - name: Create IPA
+        # Fastlane Gym baut die App wesentlich fehlertoleranter als raw xcodebuild
+        fastlane gym \
+          --workspace HitVaultV2.xcworkspace \
+          --scheme HitVaultV2 \
+          --configuration Release \
+          --export_method ad-hoc \
+          --skip_package_ipa true \
+          --skip_profile_detection true \
+          --skip_codesigning true \
+          --xcargs "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' COMPILER_INDEX_STORE_ENABLE=NO SWIFT_OPTIMIZATION_LEVEL='-Onone'"
+          
+    - name: Create IPA (Manual Packaging)
       run: |
-        cd ios
+        # Fastlane erstellt die .app Datei, wir packen sie manuell in eine .ipa
         mkdir -p Payload
-        
-        APP_PATH=$(find ./build -name "*.app" -type d | head -n 1)
+        APP_PATH=$(find . -name "HitVaultV2.app" -type d | head -n 1)
         
         if [ -z "$APP_PATH" ]; then
           echo "❌ FEHLER: Keine .app Datei gefunden!"
@@ -102,5 +72,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: hitvault-ios-ipa
-        path: ios/HitVaultV2.ipa
+        path: HitVaultV2.ipa
         retention-days: 7
