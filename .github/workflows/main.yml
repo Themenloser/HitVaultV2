@@ -1,0 +1,104 @@
+name: Build iOS App (Smart Auto-Detect)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-15 # Benötigt für aktuelle RN / Expo Versionen
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Check Project Type & Prepare (Auto-Detect Expo vs Bare)
+        run: |
+          if grep -q '"expo"' package.json; then
+            echo "🚀 Expo Projekt erkannt! Führe Prebuild aus..."
+            npx expo prebuild --platform ios --clean
+          else
+            echo "⚛️ Reines React Native Projekt erkannt! Gehe direkt zum iOS Ordner..."
+          fi
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          
+          # Patch für fehlende Zertifikate (egal ob Expo oder RN)
+          node -e "
+            const fs = require('fs');
+            if (fs.existsSync('Podfile')) {
+              let podfile = fs.readFileSync('Podfile', 'utf8');
+              const injectCode = \`
+                installer.pods_project.targets.each do |target|
+                  target.build_configurations.each do |config|
+                    config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+                    config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+                    config.build_settings['CODE_SIGN_IDENTITY'] = ''
+                    config.build_settings['EXPANDED_CODE_SIGN_IDENTITY'] = ''
+                    config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+                  end
+                end
+              \`;
+              if (podfile.includes('post_install do |installer|')) {
+                podfile = podfile.replace('post_install do |installer|', 'post_install do |installer|\\n' + injectCode);
+                fs.writeFileSync('Podfile', podfile);
+                console.log('✅ Podfile gepatched!');
+              }
+            }
+          "
+          
+          pod install --repo-update
+
+      - name: Build iOS App (Ohne Apple Account)
+        run: |
+          cd ios
+          WORKSPACE=$(ls | grep .xcworkspace | head -1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          
+          xcodebuild clean build \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            GCC_TREAT_WARNINGS_AS_ERRORS=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO
+
+      - name: Package IPA
+        run: |
+          cd ios
+          APP_PATH=$(find build -name "*.app" -type d | head -n 1)
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ FEHLER: Keine .app Datei generiert!"
+            exit 1
+          fi
+          
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r app.ipa Payload/
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hitvault-v2-ios-ipa
+          path: ios/app.ipa
+          retention-days: 7
