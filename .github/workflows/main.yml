@@ -22,7 +22,6 @@ jobs:
     - name: Setup Xcode 16.2
       run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
       
-    # DER GITHUB-ACTIONS FIX: Lädt die kaputte/fehlende Plattform auf den Server
     - name: Download iOS 18.2 Platform (GitHub Workaround)
       run: |
         xcodebuild -downloadPlatform iOS -buildVersion 22C150
@@ -33,7 +32,6 @@ jobs:
     - name: Fix Xcode Project Settings
       run: |
         cd ios
-        # Schaltet die fehlerhafte Asset-Generierung aus
         find . -name "*.pbxproj" -exec sed -i '' 's/ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;/ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;/g' {} +
         find . -name "*.pbxproj" -exec sed -i '' 's/ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = YES;/ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;/g' {} +
       
@@ -61,16 +59,16 @@ jobs:
     - name: Create IPA
       run: |
         cd ios
-        mkdir -p Payload
-        APP_PATH=$(find . -name "HitVaultV2.app" -type d | head -n 1)
-        
-        if [ -z "$APP_PATH" ]; then
-          echo "❌ FEHLER: Keine .app Datei gefunden!"
-          exit 1
-        fi
-        
-        cp -r "$APP_PATH" Payload/
-        zip -r HitVaultV2.ipa Payload/
+        # Wir lassen Fastlane die IPA direkt aus dem erfolgreichen Archiv exportieren
+        fastlane gym \
+          --workspace HitVaultV2.xcworkspace \
+          --scheme HitVaultV2 \
+          --configuration Release \
+          --export_method ad-hoc \
+          --skip_build_archive true \
+          --output_directory ./ \
+          --output_name HitVaultV2.ipa \
+          --xcargs "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=''"
         
     - name: Upload iOS IPA
       uses: actions/upload-artifact@v4
