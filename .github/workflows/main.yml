@@ -61,16 +61,20 @@ jobs:
         cd ios
         mkdir -p Payload
         
-        # Sucht die fertig gebaute App im globalen Build-Cache
-        APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "HitVaultV2.app" -type d | head -n 1)
+        echo "🔍 Suche nach der kompilierten HitVaultV2.app..."
+        
+        # Suchen im gesamten Runner-Verzeichnis (kugelsicher)
+        APP_PATH=$(find /Users/runner -name "HitVaultV2.app" -type d 2>/dev/null | head -n 1)
         
         if [ -z "$APP_PATH" ]; then
-          echo "❌ FEHLER: Keine .app Datei gefunden!"
+          echo "❌ FEHLER: Keine .app Datei gefunden! Lasse mir alle .app Dateien auf dem Server anzeigen:"
+          find /Users/runner -name "*.app" -type d 2>/dev/null
           exit 1
         fi
         
         echo "✅ App gefunden unter: $APP_PATH"
         
+        # Kopieren und in eine IPA zippen
         cp -r "$APP_PATH" Payload/
         zip -r HitVaultV2.ipa Payload/
         
