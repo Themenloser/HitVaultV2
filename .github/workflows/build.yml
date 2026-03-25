@@ -1,0 +1,90 @@
+name: Build HitVaultV2
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm install
+      
+    - name: Build Android APK
+      run: |
+        cd android
+        ./gradlew assembleRelease
+        
+    - name: Upload Android APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-apk
+        path: android/app/build/outputs/apk/release/app-release.apk
+        retention-days: 30
+
+  ios:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm install
+      
+    - name: Install CocoaPods
+      run: |
+        cd ios
+        pod install
+        
+    - name: Build iOS App
+      run: |
+        cd ios
+        xcodebuild -workspace HitVaultV2.xcworkspace \
+                   -scheme HitVaultV2 \
+                   -configuration Release \
+                   -sdk iphoneos \
+                   -derivedDataPath ./build \
+                   CODE_SIGNING_REQUIRED=NO \
+                   CODE_SIGNING_ALLOWED=NO \
+                   ENABLE_BITCODE=NO \
+                   ONLY_ACTIVE_ARCH=NO
+                   
+    - name: Create IPA
+      run: |
+        cd ios
+        mkdir Payload
+        cp -r ./build/Build/Products/Release-iphoneos/HitVaultV2.app Payload/
+        zip -r HitVaultV2.ipa Payload/
+        
+    - name: Upload iOS IPA
+      uses: actions/upload-artifact@v4
+      with:
+        name: ios-ipa
+        path: ios/HitVaultV2.ipa
+        retention-days: 30
