@@ -56,19 +56,23 @@ jobs:
           --skip_codesigning true \
           --xcargs "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' COMPILER_INDEX_STORE_ENABLE=NO SWIFT_OPTIMIZATION_LEVEL='-Onone'"
           
-    - name: Create IPA
+    - name: Create IPA (Manual Packaging)
       run: |
         cd ios
-        # Wir lassen Fastlane die IPA direkt aus dem erfolgreichen Archiv exportieren
-        fastlane gym \
-          --workspace HitVaultV2.xcworkspace \
-          --scheme HitVaultV2 \
-          --configuration Release \
-          --export_method ad-hoc \
-          --skip_build_archive true \
-          --output_directory ./ \
-          --output_name HitVaultV2.ipa \
-          --xcargs "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=''"
+        mkdir -p Payload
+        
+        # Sucht die fertig gebaute App im globalen Build-Cache
+        APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "HitVaultV2.app" -type d | head -n 1)
+        
+        if [ -z "$APP_PATH" ]; then
+          echo "❌ FEHLER: Keine .app Datei gefunden!"
+          exit 1
+        fi
+        
+        echo "✅ App gefunden unter: $APP_PATH"
+        
+        cp -r "$APP_PATH" Payload/
+        zip -r HitVaultV2.ipa Payload/
         
     - name: Upload iOS IPA
       uses: actions/upload-artifact@v4
